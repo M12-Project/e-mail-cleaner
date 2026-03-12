@@ -134,7 +134,6 @@ class EmailCleaner:
         self.mail.store(msg_id, "+FLAGS", "\\Deleted")
         self.mail.expunge()
 
-
 # ---------------------------------------------------------
 # START
 # ---------------------------------------------------------
