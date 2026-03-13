@@ -8,31 +8,40 @@ import datetime
 # ---------------------------------------------------------
 
 CONFIG = {
-    "imap_server": "imap.web.de",
-    "email": "DEINE_MAIL@web.de",
-    "password": "DEIN_PASSWORT",
+    "IMAP_Server": "imap.web.de",
+    "SMTP-Server": "smtp.web.de",
+    "email": "....@web.de",
+    "password": "......",
 
     # Ordner, die automatisch komplett geleert werden sollen
-    "auto_clean_folders": ["Spam", "Trash", "Newsletter"],
+    "auto_clean_folders": ["Spam", "INBOX"],
 
     # Absender, die niemals gelöscht werden dürfen
     "whitelist": [
-        "chef@firma.de",
-        "support@wichtig.de"
+        "msa@communication.microsoft.com"
     ],
 
     # Absender, die immer gelöscht werden sollen
     "blacklist": [
-        "spam@scam.com",
-        "newsletter@promo.de"
+        "neu@mailings.web.de",
+        "mailbox@newsletter.emp.de",
+        "support@casinonic.com",
+        "no-reply@mail.instagram.com",
+        "close_friend_updates@facebookmail.com",
+        "azure@infoemails.microsoft.com",
+        "mailout@blackmagic-design.com",
+        "news@updates.ubisoft.com",
+        "noreply@steampowered.com"
     ],
 
     # Betreff-Filter (löschen wenn Betreff diese Wörter enthält)
     "subject_keywords": [
         "Gewonnen",
-        "Rechnung",
         "Gratis",
-        "Casino"
+        "Casino",
+        "Sale",
+        "Store",
+        "Wochenende"
     ],
 
     # Alter in Tagen (älter als X Tage löschen)
@@ -66,20 +75,49 @@ def get_email_date(msg):
 class EmailCleaner:
     def __init__(self, config):
         self.config = config
-        self.mail = imaplib.IMAP4_SSL(config["imap_server"])
+        self.mail = imaplib.IMAP4_SSL(config["IMAP_Server"])
         self.mail.login(config["email"], config["password"])
 
+        # Ordnerliste abrufen
+        self.folder_map = self.get_folder_map()
+
+    # Alle IMAP-Ordner abrufen und in ein Dictionary packen
+    def get_folder_map(self):
+        status, folders = self.mail.list()
+        folder_map = {}
+
+        for f in folders:
+            decoded = f.decode()
+            # Beispiel: (\\HasNoChildren) "/" "INBOX.Newsletter"
+            name = decoded.split(' "/" ')[-1].strip('"')
+            folder_map[name.lower()] = name
+
+        print("\nGefundene IMAP-Ordner:")
+        for k, v in folder_map.items():
+            print(" →", v)
+
+        return folder_map
+
+    # Ordnernamen automatisch korrekt auflösen
+    def resolve_folder(self, name):
+        key = name.lower()
+        return self.folder_map.get(key, None)
+
     def clean(self):
-        print("Starte Reinigung...")
+        print("\nStarte Reinigung...\n")
 
         # 1) Automatische Ordner leeren
         for folder in self.config["auto_clean_folders"]:
-            self.clean_folder(folder)
+            resolved = self.resolve_folder(folder)
+            if resolved:
+                self.clean_folder(resolved)
+            else:
+                print(f"Ordner '{folder}' wurde nicht gefunden!")
 
         # 2) INBOX nach Regeln filtern
         self.apply_rules("INBOX")
 
-        print("Reinigung abgeschlossen.")
+        print("\nReinigung abgeschlossen.")
 
     def clean_folder(self, folder):
         print(f"Leere Ordner: {folder}")
@@ -89,11 +127,11 @@ class EmailCleaner:
             for msg_id in data[0].split():
                 self.mail.store(msg_id, "+FLAGS", "\\Deleted")
             self.mail.expunge()
-        except:
-            print(f"Ordner {folder} existiert nicht.")
+        except Exception as e:
+            print(f"Fehler beim Leeren von {folder}: {e}")
 
     def apply_rules(self, folder):
-        print(f"Prüfe Regeln in: {folder}")
+        print(f"\nPrüfe Regeln in: {folder}")
         self.mail.select(folder)
 
         status, data = self.mail.search(None, "ALL")
@@ -101,17 +139,27 @@ class EmailCleaner:
 
         for msg_id in msg_ids:
             status, msg_data = self.mail.fetch(msg_id, "(RFC822)")
-            msg = email.message_from_bytes(msg_data[0][1])
+
+            # Fehlerhafte oder leere Mails überspringen
+            if not msg_data or not msg_data[0]:
+                print(f"Überspringe beschädigte Mail {msg_id.decode()}")
+                continue
+
+            try:
+                msg = email.message_from_bytes(msg_data[0][1])
+            except:
+                print(f"Kann Mail {msg_id.decode()} nicht lesen – übersprungen.")
+                continue
 
             from_addr = msg.get("From", "").lower()
             subject = decode_subject(msg.get("Subject"))
             mail_date = get_email_date(msg)
 
-            # Regel 1: Whitelist → niemals löschen
+            # Regel 1: Whitelist
             if any(w.lower() in from_addr for w in self.config["whitelist"]):
                 continue
 
-            # Regel 2: Blacklist → immer löschen
+            # Regel 2: Blacklist
             if any(b.lower() in from_addr for b in self.config["blacklist"]):
                 self.delete(msg_id, reason="Blacklist")
                 continue
@@ -132,6 +180,7 @@ class EmailCleaner:
         print(f"Lösche Mail {msg_id.decode()} → Grund: {reason}")
         self.mail.store(msg_id, "+FLAGS", "\\Deleted")
         self.mail.expunge()
+
 
 # ---------------------------------------------------------
 # START
