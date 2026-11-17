@@ -24,5 +24,5 @@ The Email Cleaner helps you keep your inbox organized by automatically filtering
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/USERNAME/EMAIL-CLEANER.git
+https://github.com/M12-Project/e-mail-cleaner.git
 cd EMAIL-CLEANER
